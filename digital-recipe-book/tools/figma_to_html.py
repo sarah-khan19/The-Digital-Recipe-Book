@@ -288,6 +288,23 @@ def tw_to_style(class_str: str) -> str:
         if (v := bracket(tok, "skew-y")) is not None:
             transforms.append(f"skewY({v})")
             continue
+        # CSS masks (Looking for More carousel image windows)
+        if tok == "mask-no-repeat":
+            styles.append("mask-repeat:no-repeat;-webkit-mask-repeat:no-repeat;")
+            continue
+        if tok == "mask-alpha":
+            styles.append("mask-mode:alpha;-webkit-mask-source-type:alpha;")
+            continue
+        if tok in ("mask-intersect", "mask-no-clip"):
+            continue
+        if (v := bracket(tok, "mask-size")) is not None:
+            val = v.replace("_", " ")
+            styles.append(f"mask-size:{val};-webkit-mask-size:{val};")
+            continue
+        if (v := bracket(tok, "mask-position")) is not None:
+            val = v.replace("_", " ")
+            styles.append(f"mask-position:{val};-webkit-mask-position:{val};")
+            continue
         if (v := bracket(tok, "ms")) is not None:
             styles.append(f"margin-inline-start:{v};")
             continue
@@ -428,9 +445,13 @@ def convert(jsx: str, assets: dict[str, str], depth: int) -> str:
         for sm in re.finditer(r"(\w+)\s*:\s*`([^`]*)`", body):
             prop = re.sub(r"([a-z])([A-Z])", r"\1-\2", sm.group(1)).lower()
             parts.append(f"{prop}:{sm.group(2)}")
+            if prop == "mask-image":
+                parts.append(f"-webkit-mask-image:{sm.group(2)}")
         for sm in re.finditer(r'(\w+)\s*:\s*"([^"]*)"', body):
             prop = re.sub(r"([a-z])([A-Z])", r"\1-\2", sm.group(1)).lower()
             parts.append(f"{prop}:{sm.group(2)}")
+            if prop == "mask-image":
+                parts.append(f"-webkit-mask-image:{sm.group(2)}")
         return 'style="' + ";".join(parts) + ';"'
 
     html = re.sub(r"style=\{\{([^\{\}]*)\}\}", style_obj, html)
@@ -613,8 +634,8 @@ def hotspots(slug: str) -> str:
 FRAME_CSS = """@import url('https://fonts.googleapis.com/css2?family=Single+Day&family=Unkempt:wght@400;700&family=Vollkorn:ital,wght@0,400;0,600;0,700;1,400&display=swap');
 html,body{margin:0;padding:0;background:#fcf6eb;}
 body{overflow-x:hidden;}
-.viewport{width:100%;display:flex;justify-content:center;background:#fcf6eb;overflow-x:hidden;}
-.frame-scale{width:1440px;transform-origin:top center;}
+.viewport{width:100%;display:flex;justify-content:flex-start;background:#fcf6eb;overflow-x:hidden;}
+.frame-scale{width:1440px;zoom:calc(100vw / 1440px);}
 .frame{position:relative;width:1440px;overflow:hidden;background:#fcf6eb;}
 .frame *,.frame *::before,.frame *::after{box-sizing:border-box;}
 /* Absolute Figma text uses <p>; kill UA margins so top/left match the wireframe. */
@@ -625,7 +646,8 @@ body{overflow-x:hidden;}
 /* Lined paper from Figma ShaderFill: gap = height / lineCount; margin only when data-margin=1 */
 .notebook-lines{
   --lc: 11;
-  --line-gap: calc(100% / var(--lc));
+  --line-gap: 49px;
+  --line-offset: -20px; /* phase so card titles/body sit between rules */
   position:absolute;inset:0;pointer-events:none;
   background-color:transparent;
   background-image:
@@ -635,16 +657,20 @@ body{overflow-x:hidden;}
       transparent calc(var(--line-gap) - 1px),
       rgba(79,74,67,.22) var(--line-gap)
     );
+  background-position: 0 var(--line-offset);
+  background-size: 100% var(--line-gap);
+  background-repeat: repeat;
 }
 .notebook-lines[data-line-count="3"]{--lc:3;}
-.notebook-lines[data-line-count="4"]{--lc:4;}
+.notebook-lines[data-line-count="4"]{--lc:4;--line-gap:43.75px;--line-offset:-8px;}
 .notebook-lines[data-line-count="7"]{--lc:7;}
 .notebook-lines[data-line-count="9"]{--lc:9;}
 .notebook-lines[data-line-count="10"]{--lc:10;}
-.notebook-lines[data-line-count="11"]{--lc:11;}
+.notebook-lines[data-line-count="11"]{--lc:11;--line-gap:49px;--line-offset:-20px;}
 .notebook-lines[data-line-count="12"]{--lc:12;}
 .notebook-lines[data-line-count="14"]{--lc:14;}
 .notebook-lines[data-margin="1"]{
+  --line-offset: 0px;
   background-image:
     linear-gradient(to right, transparent 59px, rgba(224,159,127,.55) 59px, rgba(224,159,127,.55) 61px, transparent 61px),
     repeating-linear-gradient(
@@ -653,6 +679,8 @@ body{overflow-x:hidden;}
       transparent calc(var(--line-gap) - 1px),
       rgba(79,74,67,.22) var(--line-gap)
     );
+  background-size: auto, 100% var(--line-gap);
+  background-position: 0 0, 0 0;
 }
 /* Looking for More native horizontal scrollbar (Figma Scroll Bar / 432:6517 strip) */
 [data-name="Scroll Bar"]{

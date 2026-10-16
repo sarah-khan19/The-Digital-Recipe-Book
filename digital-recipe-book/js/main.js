@@ -2,18 +2,21 @@
   const scaleEl = document.querySelector("[data-frame-scale]");
   const frame = document.querySelector("[data-figma-frame]");
 
-  // Fill the viewport width (scale up past 1440 on wide screens).
+  // Fill the viewport width using zoom (affects layout; no side gutters).
   const applyScale = () => {
     if (!scaleEl || !frame) return;
     const s = Math.max(window.innerWidth / 1440, 0.5);
-    scaleEl.style.transform = `scale(${s})`;
+    scaleEl.style.zoom = String(s);
+    scaleEl.style.transform = "";
     scaleEl.style.width = "1440px";
-    const h = frame.offsetHeight * s;
-    scaleEl.style.marginBottom = `${h - frame.offsetHeight}px`;
+    // zoom already expands layout height; clear transform margin hack
+    scaleEl.style.marginBottom = "0";
     document.documentElement.style.setProperty("--frame-scale", String(s));
   };
   applyScale();
+  requestAnimationFrame(applyScale);
   window.addEventListener("resize", applyScale);
+  window.addEventListener("load", applyScale);
 
   const findAbout = () => {
     const nodes = document.querySelectorAll(".frame *");
@@ -51,6 +54,16 @@
     });
   }
 
+  // Size ruled paper from each ShaderFill lineCount × host height
+  document.querySelectorAll(".notebook-lines").forEach((el) => {
+    const lc = parseInt(el.getAttribute("data-line-count") || "11", 10) || 11;
+    const host = el.parentElement;
+    const h = (host && host.clientHeight) || el.clientHeight;
+    if (h > 0 && lc > 0) {
+      el.style.setProperty("--line-gap", `${h / lc}px`);
+    }
+  });
+
   // Looking for More: native horizontal scrollbar (Figma Scroll Bar / strip 432:6517)
   const scroller = document.querySelector('[data-name="Scroll Bar"]');
   const prev = document.querySelector("[data-carousel-prev]");
@@ -78,8 +91,10 @@
     scroller.style.overflowX = "auto";
     scroller.style.overflowY = "hidden";
 
+    // Only shift Figma nodes — never inset-filled <img left:0> children.
     const movers = [];
-    scroller.querySelectorAll("[style*='left:']").forEach((el) => {
+    scroller.querySelectorAll("[data-node-id]").forEach((el) => {
+      if (!el.style.left) return;
       const base = parseFloat(el.style.left);
       if (Number.isNaN(base)) return;
       const w = parseFloat(el.style.width);
