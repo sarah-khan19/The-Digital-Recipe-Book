@@ -1,0 +1,26 @@
+@import url('https://fonts.googleapis.com/css2?family=Single+Day&family=Unkempt:wght@400;700&family=Vollkorn:ital,wght@0,400;0,600;0,700;1,400&display=swap');
+html,body{margin:0;padding:0;background:#fcf6eb;}
+body{overflow-x:hidden;}
+.viewport{width:100%;display:flex;justify-content:center;background:#fcf6eb;overflow-x:hidden;}
+.frame-scale{width:1440px;transform-origin:top center;}
+.frame{position:relative;width:1440px;overflow:hidden;background:#fcf6eb;}
+.frame *,.frame *::before,.frame *::after{box-sizing:border-box;}
+/* Absolute Figma text uses <p>; kill UA margins so top/left match the wireframe. */
+.frame p,.frame h1,.frame h2,.frame h3,.frame h4,.frame h5,.frame h6,.frame ul,.frame ol,.frame li{
+  margin:0;padding:0;
+}
+.frame img{max-width:none;display:block;}
+.notebook-lines{
+  position:absolute;inset:0;pointer-events:none;
+  background-color:#fcf6eb;
+  background-image:
+    linear-gradient(to right, transparent 59px, rgba(224,159,127,.55) 59px, rgba(224,159,127,.55) 61px, transparent 61px),
+    repeating-linear-gradient(to bottom, transparent, transparent 39px, rgba(79,74,67,.18) 40px);
+}
+a.hotspot,button.hotspot{
+  position:absolute;z-index:60;display:block;cursor:pointer;
+  text-indent:-9999px;overflow:hidden;border:0;background:transparent;padding:0;
+}
+a.hotspot:focus-visible,button.hotspot:focus-visible{
+  outline:3px solid #e09f7f;outline-offset:2px;
+}
