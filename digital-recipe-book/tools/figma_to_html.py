@@ -361,12 +361,31 @@ def tw_to_style(class_str: str) -> str:
             v = bracket(tok, "py")
             styles.append(f"padding-top:{v};padding-bottom:{v};")
         if (v := bracket(tok, "inset")) is not None:
-            # inset-[-4px_0_0_0] or inset-[0_-8.82%_-0.89%_0]
+            # inset-[-4px_0_0_0], inset-[-1.5px_-2.88%], or inset-[0_-8.82%_-0.89%_0]
             parts = v.replace(" ", "").split("_")
             if len(parts) == 1:
                 styles.append(f"inset:{parts[0]};")
+            elif len(parts) == 2:
+                # Tailwind 2-value inset: vertical horizontal
+                styles.append(
+                    f"top:{parts[0]};right:{parts[1]};bottom:{parts[0]};left:{parts[1]};"
+                )
             elif len(parts) == 4:
                 styles.append(f"top:{parts[0]};right:{parts[1]};bottom:{parts[2]};left:{parts[3]};")
+            continue
+        # Tailwind fraction utilities: right-1/4, top-1/2, left-1/3, …
+        m = re.match(r"(left|right|top|bottom|w|h)-(\d+)/(\d+)$", tok)
+        if m:
+            prop = {
+                "left": "left",
+                "right": "right",
+                "top": "top",
+                "bottom": "bottom",
+                "w": "width",
+                "h": "height",
+            }[m.group(1)]
+            pct = (float(m.group(2)) / float(m.group(3))) * 100
+            styles.append(f"{prop}:{pct:g}%;")
             continue
         # mask helpers ignored (applied via style={{}})
     if transforms:

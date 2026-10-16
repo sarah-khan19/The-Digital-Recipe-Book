@@ -64,7 +64,7 @@
     }
   });
 
-  // Looking for More: native horizontal scrollbar (Figma Scroll Bar / strip 432:6517)
+  // Looking for More: horizontal strip; nav via Pointers (182:2889) + keyboard (no visible scrollbar)
   const scroller = document.querySelector('[data-name="Scroll Bar"]');
   const prev = document.querySelector("[data-carousel-prev]");
   const next = document.querySelector("[data-carousel-next]");

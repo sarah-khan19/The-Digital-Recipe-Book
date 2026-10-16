@@ -49,23 +49,14 @@ body{overflow-x:hidden;}
   background-size: auto, 100% var(--line-gap);
   background-position: 0 0, 0 0;
 }
-/* Looking for More native horizontal scrollbar (Figma Scroll Bar / 432:6517 strip) */
+/* Looking for More: scroll programmatically via Pointers (182:2889); hide native scrollbar */
 [data-name="Scroll Bar"]{
   overflow-x:auto !important;
   overflow-y:hidden !important;
-  scrollbar-color:#c4b49a #f8f2e8;
-  scrollbar-width:auto;
+  scrollbar-width:none;
+  -ms-overflow-style:none;
 }
-[data-name="Scroll Bar"]::-webkit-scrollbar{height:14px;}
-[data-name="Scroll Bar"]::-webkit-scrollbar-track{
-  background:#f8f2e8;
-  border-radius:0;
-}
-[data-name="Scroll Bar"]::-webkit-scrollbar-thumb{
-  background:#c4b49a;
-  border:3px solid #f8f2e8;
-  border-radius:8px;
-}
+[data-name="Scroll Bar"]::-webkit-scrollbar{width:0;height:0;display:none;}
 [data-name="Scroll Bar"] .carousel-track{
   position:relative;
   height:100%;
