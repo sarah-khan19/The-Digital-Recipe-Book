@@ -170,6 +170,9 @@ SIMPLE = {
     "inset-0": "top:0;right:0;bottom:0;left:0;",
     "overflow-clip": "overflow:hidden;",
     "overflow-hidden": "overflow:hidden;",
+    "overflow-x-auto": "overflow-x:auto;",
+    "overflow-y-clip": "overflow-y:hidden;",
+    "overflow-y-hidden": "overflow-y:hidden;",
     "pointer-events-none": "pointer-events:none;",
     "object-cover": "object-fit:cover;",
     "object-contain": "object-fit:contain;",
@@ -198,6 +201,7 @@ SIMPLE = {
     "border": "border-width:1px;",
     "-translate-x-1/2": "transform:translateX(-50%);",
     "-scale-y-100": "transform:scaleY(-1);",
+    "scale-y-100": "transform:scaleY(1);",
     "rotate-180": "transform:rotate(180deg);",
 }
 
@@ -271,6 +275,18 @@ def tw_to_style(class_str: str) -> str:
         if m:
             sign = "-" if tok.startswith("-") else ""
             transforms.append(f"rotate({sign}{m.group(1)}deg)")
+            continue
+        # Figma drop flourishes: scale-y-99 / -scale-y-99 / skew-x-[6.35deg]
+        m = re.match(r"(-?)scale-y-(\d+)$", tok)
+        if m:
+            sign = "-" if m.group(1) else ""
+            transforms.append(f"scaleY({sign}{float(m.group(2)) / 100})")
+            continue
+        if (v := bracket(tok, "skew-x")) is not None:
+            transforms.append(f"skewX({v})")
+            continue
+        if (v := bracket(tok, "skew-y")) is not None:
+            transforms.append(f"skewY({v})")
             continue
         if (v := bracket(tok, "ms")) is not None:
             styles.append(f"margin-inline-start:{v};")
@@ -456,9 +472,20 @@ def convert(jsx: str, assets: dict[str, str], depth: int) -> str:
     html = re.sub(r"<[^>]+>", fix_tag_styles, html)
 
     html = html.replace("aria-hidden={true}", 'aria-hidden="true"')
+    def shader_repl(m: re.Match) -> str:
+        block = m.group(0)
+        lc_m = re.search(r"lineCount:\s*(\d+)", block)
+        ml_m = re.search(r"marginLine:\s*(true|false)", block)
+        line_count = lc_m.group(1) if lc_m else "11"
+        margin = "1" if ml_m and ml_m.group(1) == "true" else "0"
+        return (
+            f'<div class="notebook-lines" data-line-count="{line_count}" '
+            f'data-margin="{margin}" aria-hidden="true"></div>'
+        )
+
     html = re.sub(
         r"<ShaderFill[^>]*/>|<ShaderFill[^>]*>.*?</ShaderFill>",
-        '<div class="notebook-lines" aria-hidden="true"></div>',
+        shader_repl,
         html,
         flags=re.S,
     )
@@ -595,12 +622,58 @@ body{overflow-x:hidden;}
   margin:0;padding:0;
 }
 .frame img{max-width:none;display:block;}
+/* Lined paper from Figma ShaderFill: gap = height / lineCount; margin only when data-margin=1 */
 .notebook-lines{
+  --lc: 11;
+  --line-gap: calc(100% / var(--lc));
   position:absolute;inset:0;pointer-events:none;
-  background-color:#fcf6eb;
+  background-color:transparent;
+  background-image:
+    repeating-linear-gradient(
+      to bottom,
+      transparent,
+      transparent calc(var(--line-gap) - 1px),
+      rgba(79,74,67,.22) var(--line-gap)
+    );
+}
+.notebook-lines[data-line-count="3"]{--lc:3;}
+.notebook-lines[data-line-count="4"]{--lc:4;}
+.notebook-lines[data-line-count="7"]{--lc:7;}
+.notebook-lines[data-line-count="9"]{--lc:9;}
+.notebook-lines[data-line-count="10"]{--lc:10;}
+.notebook-lines[data-line-count="11"]{--lc:11;}
+.notebook-lines[data-line-count="12"]{--lc:12;}
+.notebook-lines[data-line-count="14"]{--lc:14;}
+.notebook-lines[data-margin="1"]{
   background-image:
     linear-gradient(to right, transparent 59px, rgba(224,159,127,.55) 59px, rgba(224,159,127,.55) 61px, transparent 61px),
-    repeating-linear-gradient(to bottom, transparent, transparent 39px, rgba(79,74,67,.18) 40px);
+    repeating-linear-gradient(
+      to bottom,
+      transparent,
+      transparent calc(var(--line-gap) - 1px),
+      rgba(79,74,67,.22) var(--line-gap)
+    );
+}
+/* Looking for More native horizontal scrollbar (Figma Scroll Bar / 432:6517 strip) */
+[data-name="Scroll Bar"]{
+  overflow-x:auto !important;
+  overflow-y:hidden !important;
+  scrollbar-color:#c4b49a #f8f2e8;
+  scrollbar-width:auto;
+}
+[data-name="Scroll Bar"]::-webkit-scrollbar{height:14px;}
+[data-name="Scroll Bar"]::-webkit-scrollbar-track{
+  background:#f8f2e8;
+  border-radius:0;
+}
+[data-name="Scroll Bar"]::-webkit-scrollbar-thumb{
+  background:#c4b49a;
+  border:3px solid #f8f2e8;
+  border-radius:8px;
+}
+[data-name="Scroll Bar"] .carousel-track{
+  position:relative;
+  height:100%;
 }
 a.hotspot,button.hotspot{
   position:absolute;z-index:60;display:block;cursor:pointer;
