@@ -504,18 +504,7 @@ def convert(jsx: str, assets: dict[str, str], depth: int) -> str:
         html,
     )
 
-    # Funnel cake ingredient link affordance (wired as hotspot)
-    html = re.sub(
-        r'(data-node-id="391:5503"[^>]*style=")([^"]*)(")',
-        lambda m: m.group(1)
-        + (
-            m.group(2)
-            if "text-decoration:" in m.group(2)
-            else m.group(2) + "text-decoration:underline;"
-        )
-        + m.group(3),
-        html,
-    )
+    # Funnel cake strawberry underline is a separate Figma line node (391:5510)
     return html
 
 
