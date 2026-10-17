@@ -55,8 +55,8 @@
   }
 
   // Size ruled paper from each ShaderFill lineCount × host height.
-  // Recipe Ingredients (data-margin=1): one absolute rule between each pair of
-  // ingredient ink mids so every row is mid-gap (uneven 62/64 spacing cannot drift).
+  // Recipe Ingredients (data-margin=1): even notebook pitch (median item gap),
+  // phased so every ingredient ink mid sits mid-gap — matches lined-paper ref.
   const ingredientInkMid = (p, paperTop) => {
     let textNode = null;
     const walk = document.createTreeWalker(p, NodeFilter.SHOW_TEXT);
@@ -80,9 +80,10 @@
     return r.top - paperTop + Math.min(17, r.height * 0.36);
   };
 
-  const ruleYsFromMids = (mids, paperH) => {
-    // Chain rules so EACH ink mid is exact band center. Split on spacing
-    // outliers (e.g. "Crumble Ingredients" header gap) so the chain cannot jump.
+  const ruleYsFromMids = (mids, paperH, avoidBands) => {
+    // Even pitch per group (split on spacing outliers e.g. "Crumble Ingredients").
+    // Phase chosen to minimize max |inkMid − band center| so rows stay mid-gap
+    // while rules stay evenly spaced like the approved notebook ref.
     if (!mids.length) return [];
     const spacings = [];
     for (let i = 1; i < mids.length; i++) spacings.push(mids[i] - mids[i - 1]);
@@ -102,31 +103,62 @@
 
     const ys = [];
     groups.forEach((g) => {
-      if (g.length === 1) {
-        ys.push(g[0] - median / 2, g[0] + median / 2);
-        return;
+      const medGap =
+        g.length >= 2
+          ? [...g]
+              .slice(1)
+              .map((m, i) => m - g[i])
+              .sort((a, b) => a - b)[Math.floor((g.length - 1) / 2)]
+          : median;
+      // Search pitch near the median + phase so every ink mid is mid-gap
+      // (short lists with uneven spacing need a non-median pitch).
+      let bestGap = medGap;
+      let bestOff = medGap / 2;
+      let bestScore = Infinity;
+      const gapLo = Math.max(40, medGap - 12);
+      const gapHi = medGap + 12;
+      for (let gap = gapLo; gap <= gapHi + 1e-6; gap += 0.5) {
+        const steps = Math.max(8, Math.round(gap * 2));
+        for (let s = 0; s <= steps; s++) {
+          const off = (s / steps) * gap;
+          const c0 = g[0] - off + gap / 2;
+          let score = 0;
+          g.forEach((m) => {
+            const k = Math.round((m - c0) / gap);
+            score = Math.max(score, Math.abs(m - (c0 + k * gap)));
+          });
+          if (score < bestScore) {
+            bestScore = score;
+            bestGap = gap;
+            bestOff = off;
+          }
+        }
       }
-      const local = [g[0] - (g[1] - g[0]) / 2];
-      g.forEach((mid) => local.push(2 * mid - local[local.length - 1]));
-      ys.push(...local);
+      const gap = bestGap;
+      const c0 = g[0] - bestOff + gap / 2;
+      // Rules at band edges (centers ± gap/2), covering the group only —
+      // not the whole paper (avoids a rule through the "Ingredients" title).
+      const yMin = g[0] - gap * 0.85;
+      const yMax = g[g.length - 1] + gap * 0.85;
+      const firstEdge = c0 - gap / 2;
+      let k = Math.ceil((yMin - firstEdge) / gap - 1e-9);
+      for (;; k++) {
+        const y = firstEdge + k * gap;
+        if (y > yMax + 1e-6) break;
+        ys.push(y);
+      }
     });
     ys.sort((a, b) => a - b);
-    // Dedupe near-duplicates
     const uniq = [];
     ys.forEach((y) => {
       if (!uniq.length || Math.abs(y - uniq[uniq.length - 1]) > 0.5) uniq.push(y);
     });
-    let y = uniq[0] - median;
-    while (y > -1) {
-      uniq.unshift(y);
-      y -= median;
-    }
-    y = uniq[uniq.length - 1] + median;
-    while (y < paperH + 1) {
-      uniq.push(y);
-      y += median;
-    }
-    return uniq;
+    // Drop rules that cut through section headers (Ingredients / Crumble …)
+    const bands = avoidBands || [];
+    return uniq.filter((y) => {
+      if (y < -2 || y > paperH + 2) return false;
+      return !bands.some((b) => y >= b.top + 4 && y <= b.bottom - 4);
+    });
   };
 
   const renderIngredientRules = (el, ys) => {
@@ -151,6 +183,12 @@
       el.closest('[data-name="Ingredients"]') ||
       paper.closest('[data-name="Ingredients"]') ||
       document;
+    const headerBands = [...root.querySelectorAll("p")]
+      .filter((p) => /ingredients/i.test(p.textContent.trim()))
+      .map((p) => {
+        const r = p.getBoundingClientRect();
+        return { top: r.top - paperRect.top, bottom: r.bottom - paperRect.top };
+      });
     const mids = [...root.querySelectorAll("p")]
       .filter((p) => {
         const t = p.textContent.trim();
@@ -170,11 +208,14 @@
 
     if (!mids.length) return;
 
-    const ys = ruleYsFromMids(mids, paperH);
+    const ys = ruleYsFromMids(mids, paperH, headerBands);
     renderIngredientRules(el, ys);
     // Keep vars for debugging / any residual CSS; not used for drawing.
     if (mids.length >= 2) {
-      el.style.setProperty("--line-gap", `${mids[1] - mids[0]}px`);
+      const spacings = [];
+      for (let i = 1; i < mids.length; i++) spacings.push(mids[i] - mids[i - 1]);
+      const med = [...spacings].sort((a, b) => a - b)[Math.floor(spacings.length / 2)];
+      el.style.setProperty("--line-gap", `${med}px`);
     }
   };
 

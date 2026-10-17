@@ -53,7 +53,8 @@ body{overflow-x:hidden;}
   height:1px;
   margin:0;
   padding:0;
-  background:rgba(79,74,67,.22);
+  /* Tan notebook rule — matches embellish / nav-line #EDDEC7 */
+  background:#EDDEC7;
   pointer-events:none;
 }
 /* Looking for More: scroll programmatically via Pointers (182:2889); hide native scrollbar */
