@@ -54,8 +54,91 @@
     });
   }
 
-  // Size ruled paper from each ShaderFill lineCount × host height
+  // Size ruled paper from each ShaderFill lineCount × host height.
+  // Recipe Ingredients (data-margin=1): match gap/phase to ingredient rows so
+  // bullet+text sit centered between horizontal rules (not on the lines).
+  const alignIngredientNotebook = (el) => {
+    const host = el.parentElement;
+    const paper = (host && host.parentElement) || host || el;
+    const paperRect = paper.getBoundingClientRect();
+    const lc = parseInt(el.getAttribute("data-line-count") || "11", 10) || 11;
+    const fallbackGap = () => {
+      const h = paperRect.height || (host && host.clientHeight) || el.clientHeight;
+      if (h > 0 && lc > 0) el.style.setProperty("--line-gap", `${h / lc}px`);
+    };
+
+    const root =
+      el.closest('[data-name="Ingredients"]') ||
+      paper.closest('[data-name="Ingredients"]') ||
+      document;
+    const mids = [...root.querySelectorAll("p")]
+      .filter((p) => {
+        const t = p.textContent.trim();
+        if (!t || /ingredients/i.test(t)) return false;
+        const cs = getComputedStyle(p);
+        if (cs.position !== "absolute") return false;
+        const fs = parseFloat(cs.fontSize);
+        if (fs < 20 || fs > 28) return false;
+        const r = p.getBoundingClientRect();
+        const mid = (r.top + r.bottom) / 2;
+        return mid >= paperRect.top - 1 && mid <= paperRect.bottom + 1;
+      })
+      .map((p) => {
+        const r = p.getBoundingClientRect();
+        return (r.top + r.bottom) / 2 - paperRect.top;
+      })
+      .sort((a, b) => a - b);
+
+    if (!mids.length) {
+      fallbackGap();
+      return;
+    }
+
+    let gap;
+    if (mids.length >= 2) {
+      const spacings = [];
+      for (let i = 1; i < mids.length; i++) spacings.push(mids[i] - mids[i - 1]);
+      spacings.sort((a, b) => a - b);
+      const median = spacings[Math.floor(spacings.length / 2)];
+      const good = spacings.filter((s) => s > median * 0.7 && s < median * 1.35);
+      const use = good.length ? good : spacings;
+      gap = use.reduce((a, b) => a + b, 0) / use.length;
+    } else {
+      gap = paperRect.height > 0 && lc > 0 ? paperRect.height / lc : 63;
+    }
+    if (!(gap > 8)) {
+      fallbackGap();
+      return;
+    }
+
+    // Lines fall at offset + n*gap; band centers at offset + (n+0.5)*gap.
+    // Circular mean of (mid % gap) — mods near 0 and near gap are the same phase.
+    const mods = mids.map((m) => ((m % gap) + gap) % gap);
+    const sinSum = mods.reduce(
+      (a, m) => a + Math.sin((2 * Math.PI * m) / gap),
+      0
+    );
+    const cosSum = mods.reduce(
+      (a, m) => a + Math.cos((2 * Math.PI * m) / gap),
+      0
+    );
+    const avgMod =
+      (((Math.atan2(sinSum / mods.length, cosSum / mods.length) /
+        (2 * Math.PI)) *
+        gap) +
+        gap) %
+      gap;
+    const offset = avgMod - gap / 2;
+
+    el.style.setProperty("--line-gap", `${gap}px`);
+    el.style.setProperty("--line-offset", `${offset}px`);
+  };
+
   document.querySelectorAll(".notebook-lines").forEach((el) => {
+    if (el.getAttribute("data-margin") === "1") {
+      alignIngredientNotebook(el);
+      return;
+    }
     const lc = parseInt(el.getAttribute("data-line-count") || "11", 10) || 11;
     const host = el.parentElement;
     const h = (host && host.clientHeight) || el.clientHeight;

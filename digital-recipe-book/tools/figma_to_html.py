@@ -689,7 +689,7 @@ body{overflow-x:hidden;}
 .notebook-lines[data-line-count="12"]{--lc:12;}
 .notebook-lines[data-line-count="14"]{--lc:14;}
 .notebook-lines[data-margin="1"]{
-  --line-offset: 0px;
+  /* Recipe Ingredients paper: JS sets --line-gap/--line-offset so rows sit between rules */
   background-image:
     linear-gradient(to right, transparent 59px, rgba(224,159,127,.55) 59px, rgba(224,159,127,.55) 61px, transparent 61px),
     repeating-linear-gradient(
@@ -699,7 +699,7 @@ body{overflow-x:hidden;}
       rgba(79,74,67,.22) var(--line-gap)
     );
   background-size: auto, 100% var(--line-gap);
-  background-position: 0 0, 0 0;
+  background-position: 0 0, 0 var(--line-offset);
 }
 /* Looking for More native horizontal scrollbar (Figma Scroll Bar / 432:6517 strip) */
 [data-name="Scroll Bar"]{
