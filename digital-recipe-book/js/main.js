@@ -90,6 +90,13 @@
   };
 
   if (scroller) {
+    // Prevent the browser from restoring a mid-strip overflow scrollLeft.
+    try {
+      if ("scrollRestoration" in history) history.scrollRestoration = "manual";
+    } catch (_) {
+      /* ignore */
+    }
+
     scroller.style.overflowX = "auto";
     scroller.style.overflowY = "hidden";
 
@@ -123,16 +130,105 @@
       movers.forEach(({ el, base }) => {
         el.style.left = `${base - minLeft + pad}px`;
       });
+
+      // Real <a> overlays on each recipe card paper so clicks always navigate
+      // (works even if event delegation / drag suppress fails).
+      const trackEl = scroller.querySelector(":scope > .carousel-track") || scroller;
+      trackEl.querySelectorAll("a.carousel-card-link").forEach((a) => a.remove());
+      const papers = [...trackEl.querySelectorAll("[data-node-id]")].filter(
+        (el) => {
+          const w = parseFloat(el.style.width);
+          const h = parseFloat(el.style.height);
+          // Card paper frames are ~336×175; skip nested images/titles.
+          return w >= 300 && w <= 360 && h >= 150 && h <= 200 && el.style.left;
+        }
+      );
+      const seenHref = new Set();
+      papers.forEach((paper) => {
+        let href = null;
+        let n = paper;
+        while (n && n !== scroller) {
+          const name = n.getAttribute && n.getAttribute("data-name");
+          if (name && linkMap[name]) {
+            href = linkMap[name];
+            break;
+          }
+          n = n.parentElement;
+        }
+        if (!href) {
+          // Match nearby title text for display:contents groups
+          const left = parseFloat(paper.style.left);
+          const titles = [...trackEl.querySelectorAll("p")].filter((p) => {
+            const pl = parseFloat(p.style.left);
+            return !Number.isNaN(pl) && Math.abs(pl - (left + 250)) < 200;
+          });
+          for (const p of titles) {
+            const t = (p.textContent || "").replace(/\s+/g, " ").trim();
+            for (const [key, url] of Object.entries(linkMap)) {
+              if (t === key || t === `${key} ` || t.includes(key)) {
+                href = url;
+                break;
+              }
+            }
+            if (href) break;
+            if (t === "Chocolate Chip Cookies") href = linkMap.Cookies;
+            if (t === "Chocolate Brownies") href = linkMap.Brownies;
+            if (href) break;
+          }
+        }
+        if (!href || seenHref.has(href)) return;
+        seenHref.add(href);
+        const a = document.createElement("a");
+        a.className = "carousel-card-link";
+        a.href = href;
+        a.setAttribute(
+          "aria-label",
+          `Open ${href.split("/").pop().replace(".html", "")}`
+        );
+        a.style.cssText = [
+          "position:absolute",
+          `left:${paper.style.left}`,
+          `top:${paper.style.top || "34px"}`,
+          `width:${paper.style.width}`,
+          `height:${paper.style.height || "175px"}`,
+          "z-index:20",
+          "display:block",
+          "cursor:pointer",
+          "pointer-events:auto",
+        ].join(";");
+        trackEl.appendChild(a);
+      });
     }
 
     // Default at the start of the strip (Cookies → … → Ganache).
     const resetScrollStart = () => {
       scroller.scrollLeft = 0;
+      try {
+        scroller.scrollTo({ left: 0, top: 0, behavior: "instant" });
+      } catch (_) {
+        scroller.scrollTo(0, 0);
+      }
     };
     resetScrollStart();
     requestAnimationFrame(resetScrollStart);
+    requestAnimationFrame(() => requestAnimationFrame(resetScrollStart));
     window.addEventListener("load", resetScrollStart);
-    window.addEventListener("pageshow", resetScrollStart);
+    window.addEventListener("pageshow", (event) => {
+      resetScrollStart();
+      // bfcache restore can re-apply overflow scroll after pageshow.
+      if (event.persisted) {
+        setTimeout(resetScrollStart, 0);
+        setTimeout(resetScrollStart, 50);
+      }
+    });
+    setTimeout(resetScrollStart, 0);
+    setTimeout(resetScrollStart, 50);
+    setTimeout(resetScrollStart, 200);
+    setTimeout(resetScrollStart, 500);
+    // Images / fonts can shift layout and let the UA restore scroll — pin again.
+    scroller.querySelectorAll("img").forEach((img) => {
+      if (!img.complete) img.addEventListener("load", resetScrollStart, { once: true });
+    });
 
     const step = 368;
     const scrollBy = (dir) => {
@@ -150,30 +246,43 @@
     let startScroll = 0;
     let moved = 0;
     let suppressClick = false;
+    let activePointerId = null;
     scroller.addEventListener("pointerdown", (event) => {
       if (event.pointerType === "mouse" && event.button !== 0) return;
+      // Do not capture yet — capturing on the scroller steals clicks from <a> overlays.
       dragging = true;
       moved = 0;
       suppressClick = false;
+      activePointerId = event.pointerId;
       startX = event.clientX;
       startScroll = scroller.scrollLeft;
-      try {
-        scroller.setPointerCapture(event.pointerId);
-      } catch (_) {
-        /* ignore */
-      }
     });
     scroller.addEventListener("pointermove", (event) => {
-      if (!dragging) return;
+      if (!dragging || event.pointerId !== activePointerId) return;
       const dx = event.clientX - startX;
       moved = Math.max(moved, Math.abs(dx));
-      scroller.scrollLeft = startScroll - dx;
+      if (moved > 8) {
+        if (
+          typeof scroller.hasPointerCapture !== "function" ||
+          !scroller.hasPointerCapture(event.pointerId)
+        ) {
+          try {
+            scroller.setPointerCapture(event.pointerId);
+          } catch (_) {
+            /* ignore */
+          }
+        }
+        scroller.scrollLeft = startScroll - dx;
+      }
     });
-    const endDrag = () => {
-      // Only treat as a drag (block navigation) when the pointer actually moved.
+    const endDrag = (event) => {
+      if (event && activePointerId != null && event.pointerId !== activePointerId) {
+        return;
+      }
       suppressClick = moved > 8;
       dragging = false;
       moved = 0;
+      activePointerId = null;
     };
     scroller.addEventListener("pointerup", endDrag);
     scroller.addEventListener("pointercancel", endDrag);
@@ -181,6 +290,9 @@
     const hrefFor = (el) => {
       let n = el;
       while (n && n !== scroller) {
+        if (n.tagName === "A" && n.getAttribute("href")) {
+          return n.getAttribute("href");
+        }
         const name = n.getAttribute && n.getAttribute("data-name");
         if (name && linkMap[name]) return linkMap[name];
         n = n.parentElement;
@@ -188,24 +300,28 @@
       return null;
     };
 
-    // Pointer on card papers + recipe roots (display:contents groups).
     scroller.querySelectorAll("[data-name]").forEach((el) => {
       if (hrefFor(el)) el.style.cursor = "pointer";
     });
-    scroller.querySelectorAll("[data-node-id]").forEach((el) => {
-      const w = parseFloat(el.style.width);
-      if (w >= 300 && w <= 360) el.style.cursor = "pointer";
-    });
 
     scroller.addEventListener("click", (event) => {
+      const link =
+        event.target.closest && event.target.closest("a.carousel-card-link");
       if (suppressClick) {
         event.preventDefault();
         event.stopPropagation();
         suppressClick = false;
         return;
       }
+      // Always navigate programmatically — pointer capture / overlays can
+      // cancel the native default even when the click event still fires.
+      if (link) {
+        event.preventDefault();
+        window.location.assign(link.getAttribute("href"));
+        return;
+      }
       const href = hrefFor(event.target);
-      if (href) location.href = href;
+      if (href) window.location.assign(href);
     });
   }
 })();
