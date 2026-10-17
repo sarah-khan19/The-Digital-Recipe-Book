@@ -55,8 +55,8 @@
   }
 
   // Size ruled paper from each ShaderFill lineCount × host height.
-  // Recipe Ingredients (data-margin=1): even notebook pitch (median item gap),
-  // phased so every ingredient ink mid sits mid-gap — matches lined-paper ref.
+  // Recipe Ingredients (data-margin=1): redistribute items to a uniform row
+  // pitch, then draw even notebook rules so every bullet+text sits mid-gap.
   const ingredientInkMid = (p, paperTop) => {
     let textNode = null;
     const walk = document.createTreeWalker(p, NodeFilter.SHOW_TEXT);
@@ -80,72 +80,121 @@
     return r.top - paperTop + Math.min(17, r.height * 0.36);
   };
 
-  const ruleYsFromMids = (mids, paperH, avoidBands) => {
-    // Even pitch per group (split on spacing outliers e.g. "Crumble Ingredients").
-    // Phase chosen to minimize max |inkMid − band center| so rows stay mid-gap
-    // while rules stay evenly spaced like the approved notebook ref.
-    if (!mids.length) return [];
+  const collectIngredientItems = (root, paperRect) => {
+    return [...root.querySelectorAll("p")]
+      .filter((p) => {
+        const t = p.textContent.trim();
+        if (!t || /ingredients/i.test(t)) return false;
+        const cs = getComputedStyle(p);
+        if (cs.position !== "absolute") return false;
+        const fs = parseFloat(cs.fontSize);
+        if (fs < 20 || fs > 28) return false;
+        const left = parseFloat(cs.left);
+        if (!Number.isNaN(left) && (left < 100 || left > 250)) return false;
+        const r = p.getBoundingClientRect();
+        const mid = (r.top + r.bottom) / 2;
+        return mid >= paperRect.top - 1 && mid <= paperRect.bottom + 1;
+      })
+      .map((p) => {
+        const wrap =
+          p.parentElement &&
+          p.parentElement.classList &&
+          p.parentElement.classList.contains("fig")
+            ? p.parentElement
+            : null;
+        const bullet = wrap
+          ? [...wrap.querySelectorAll("div.fig")].find((d) => {
+              const w = parseFloat(getComputedStyle(d).width);
+              const h = parseFloat(getComputedStyle(d).height);
+              return w > 6 && w < 16 && h > 6 && h < 16;
+            })
+          : null;
+        const top = parseFloat(p.style.top);
+        const bulletTop = bullet ? parseFloat(bullet.style.top) : NaN;
+        const bulletOffset = Number.isFinite(bulletTop) && Number.isFinite(top)
+          ? bulletTop - top
+          : 13.21;
+        return {
+          p,
+          wrap,
+          bullet,
+          bulletOffset,
+          top: Number.isFinite(top) ? top : p.getBoundingClientRect().top - paperRect.top,
+          inkMid: ingredientInkMid(p, paperRect.top),
+        };
+      })
+      .sort((a, b) => a.inkMid - b.inkMid);
+  };
+
+  const splitIngredientGroups = (items) => {
+    if (!items.length) return [];
     const spacings = [];
-    for (let i = 1; i < mids.length; i++) spacings.push(mids[i] - mids[i - 1]);
+    for (let i = 1; i < items.length; i++) {
+      spacings.push(items[i].inkMid - items[i - 1].inkMid);
+    }
     const median =
       spacings.length > 0
         ? [...spacings].sort((a, b) => a - b)[Math.floor(spacings.length / 2)]
         : 63;
     const groups = [];
-    let cur = [mids[0]];
-    for (let i = 1; i < mids.length; i++) {
-      if (mids[i] - mids[i - 1] > median * 1.35) {
+    let cur = [items[0]];
+    for (let i = 1; i < items.length; i++) {
+      if (items[i].inkMid - items[i - 1].inkMid > median * 1.35) {
         groups.push(cur);
-        cur = [mids[i]];
-      } else cur.push(mids[i]);
+        cur = [items[i]];
+      } else cur.push(items[i]);
     }
     groups.push(cur);
+    return { groups, median };
+  };
 
+  const setAbsTop = (node, top) => {
+    if (!node) return;
+    node.style.top = `${top.toFixed(2)}px`;
+  };
+
+  const redistributeIngredientGroup = (group, median) => {
+    if (group.length < 2) return median;
+    const spacings = [];
+    for (let i = 1; i < group.length; i++) {
+      spacings.push(group[i].inkMid - group[i - 1].inkMid);
+    }
+    const gap = [...spacings].sort((a, b) => a - b)[Math.floor(spacings.length / 2)];
+    // Keep first row; place the rest on a uniform CSS-top grid (same pitch).
+    const top0 = group[0].top;
+    const inkOffset = group[0].inkMid - top0;
+    group.forEach((item, i) => {
+      const newTop = top0 + i * gap;
+      setAbsTop(item.p, newTop);
+      setAbsTop(item.bullet, newTop + item.bulletOffset);
+      if (item.wrap && /top:\s*[\d.]+px/.test(item.wrap.getAttribute("style") || "")) {
+        const style = item.wrap.getAttribute("style") || "";
+        item.wrap.setAttribute(
+          "style",
+          style.replace(/top:\s*[\d.]+px/, `top:${newTop.toFixed(2)}px`)
+        );
+      }
+      item.top = newTop;
+      item.inkMid = newTop + inkOffset;
+    });
+    return gap;
+  };
+
+  const ruleYsFromUniformMids = (groups, paperH, avoidBands) => {
     const ys = [];
     groups.forEach((g) => {
-      const medGap =
-        g.length >= 2
-          ? [...g]
-              .slice(1)
-              .map((m, i) => m - g[i])
-              .sort((a, b) => a - b)[Math.floor((g.length - 1) / 2)]
-          : median;
-      // Search pitch near the median + phase so every ink mid is mid-gap
-      // (short lists with uneven spacing need a non-median pitch).
-      let bestGap = medGap;
-      let bestOff = medGap / 2;
-      let bestScore = Infinity;
-      const gapLo = Math.max(40, medGap - 12);
-      const gapHi = medGap + 12;
-      for (let gap = gapLo; gap <= gapHi + 1e-6; gap += 0.5) {
-        const steps = Math.max(8, Math.round(gap * 2));
-        for (let s = 0; s <= steps; s++) {
-          const off = (s / steps) * gap;
-          const c0 = g[0] - off + gap / 2;
-          let score = 0;
-          g.forEach((m) => {
-            const k = Math.round((m - c0) / gap);
-            score = Math.max(score, Math.abs(m - (c0 + k * gap)));
-          });
-          if (score < bestScore) {
-            bestScore = score;
-            bestGap = gap;
-            bestOff = off;
-          }
-        }
-      }
-      const gap = bestGap;
-      const c0 = g[0] - bestOff + gap / 2;
-      // Rules at band edges (centers ± gap/2), covering the group only —
-      // not the whole paper (avoids a rule through the "Ingredients" title).
-      const yMin = g[0] - gap * 0.85;
-      const yMax = g[g.length - 1] + gap * 0.85;
-      const firstEdge = c0 - gap / 2;
-      let k = Math.ceil((yMin - firstEdge) / gap - 1e-9);
-      for (;; k++) {
-        const y = firstEdge + k * gap;
-        if (y > yMax + 1e-6) break;
+      if (!g.length) return;
+      const gap =
+        g.length >= 2 ? g[1].inkMid - g[0].inkMid : 63;
+      const yMin = g[0].inkMid - gap * 0.85;
+      const yMax = g[g.length - 1].inkMid + gap * 0.85;
+      // Rules at inkMid ± gap/2 (exact mid-gap for every row).
+      let y = g[0].inkMid - gap / 2;
+      while (y > yMin) y -= gap;
+      while (y < yMin - 1e-6) y += gap;
+      while (y <= yMax + 1e-6) {
         ys.push(y);
+        y += gap;
       }
     });
     ys.sort((a, b) => a - b);
@@ -153,7 +202,6 @@
     ys.forEach((y) => {
       if (!uniq.length || Math.abs(y - uniq[uniq.length - 1]) > 0.5) uniq.push(y);
     });
-    // Drop rules that cut through section headers (Ingredients / Crumble …)
     const bands = avoidBands || [];
     return uniq.filter((y) => {
       if (y < -2 || y > paperH + 2) return false;
@@ -189,34 +237,19 @@
         const r = p.getBoundingClientRect();
         return { top: r.top - paperRect.top, bottom: r.bottom - paperRect.top };
       });
-    const mids = [...root.querySelectorAll("p")]
-      .filter((p) => {
-        const t = p.textContent.trim();
-        if (!t || /ingredients/i.test(t)) return false;
-        const cs = getComputedStyle(p);
-        if (cs.position !== "absolute") return false;
-        const fs = parseFloat(cs.fontSize);
-        if (fs < 20 || fs > 28) return false;
-        const left = parseFloat(cs.left);
-        if (!Number.isNaN(left) && (left < 100 || left > 250)) return false;
-        const r = p.getBoundingClientRect();
-        const mid = (r.top + r.bottom) / 2;
-        return mid >= paperRect.top - 1 && mid <= paperRect.bottom + 1;
-      })
-      .map((p) => ingredientInkMid(p, paperRect.top))
-      .sort((a, b) => a - b);
 
-    if (!mids.length) return;
+    const items = collectIngredientItems(root, paperRect);
+    if (!items.length) return;
 
-    const ys = ruleYsFromMids(mids, paperH, headerBands);
+    const { groups, median } = splitIngredientGroups(items);
+    let pitch = median;
+    groups.forEach((g) => {
+      pitch = redistributeIngredientGroup(g, median) || pitch;
+    });
+
+    const ys = ruleYsFromUniformMids(groups, paperH, headerBands);
     renderIngredientRules(el, ys);
-    // Keep vars for debugging / any residual CSS; not used for drawing.
-    if (mids.length >= 2) {
-      const spacings = [];
-      for (let i = 1; i < mids.length; i++) spacings.push(mids[i] - mids[i - 1]);
-      const med = [...spacings].sort((a, b) => a - b)[Math.floor(spacings.length / 2)];
-      el.style.setProperty("--line-gap", `${med}px`);
-    }
+    el.style.setProperty("--line-gap", `${pitch}px`);
   };
 
   const syncNotebookLines = () => {
