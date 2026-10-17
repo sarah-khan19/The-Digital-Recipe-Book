@@ -69,18 +69,20 @@
   const prev = document.querySelector("[data-carousel-prev]");
   const next = document.querySelector("[data-carousel-next]");
 
+  // Recipe card roots in the Looking for More strip (and unique image aliases).
   const linkMap = {
+    "Chocolate Ganache": "recipes/chocolate-ganache.html",
+    "Strawberry Compote": "recipes/strawberry-compote.html",
+    "Banana Bread": "recipes/banana-bread.html",
     "Banana Crumble Muffins": "recipes/banana-crumble-muffins.html",
     "Chocolate Chip Muffins": "recipes/chocolate-chip-muffins.html",
     "Funnel Cake": "recipes/funnel-cake.html",
     "Lemon Poppyseed Loaf": "recipes/lemon-poppyseed-loaf.html",
-    "Banana Bread": "recipes/banana-bread.html",
+    Brownies: "recipes/brownies.html",
+    "Chocolate Brownies": "recipes/brownies.html",
+    Cookies: "recipes/chocolate-chip-cookies.html",
     Cookie: "recipes/chocolate-chip-cookies.html",
     "Chocolate Chip Cookies": "recipes/chocolate-chip-cookies.html",
-    "Chocolate Brownies": "recipes/brownies.html",
-    Brownies: "recipes/brownies.html",
-    "Strawberry Compote": "recipes/strawberry-compote.html",
-    "Chocolate Ganache": "recipes/chocolate-ganache.html",
     "image 2": "recipes/brownies.html",
     "image 4": "recipes/banana-crumble-muffins.html",
     "image 6": "recipes/lemon-poppyseed-loaf.html",
@@ -121,22 +123,16 @@
       movers.forEach(({ el, base }) => {
         el.style.left = `${base - minLeft + pad}px`;
       });
-
-      // Resting view ~ Banana Crumble Muffins (Figma default)
-      requestAnimationFrame(() => {
-        const prefer = scroller.querySelector(
-          '[data-name="Banana Crumble Muffins"]'
-        );
-        if (prefer && prefer.style.left) {
-          scroller.scrollLeft = Math.max(0, parseFloat(prefer.style.left) - 40);
-        } else {
-          scroller.scrollLeft = Math.max(
-            0,
-            (trackW - scroller.clientWidth) / 2
-          );
-        }
-      });
     }
+
+    // Default at the start of the strip (Cookies → … → Ganache).
+    const resetScrollStart = () => {
+      scroller.scrollLeft = 0;
+    };
+    resetScrollStart();
+    requestAnimationFrame(resetScrollStart);
+    window.addEventListener("load", resetScrollStart);
+    window.addEventListener("pageshow", resetScrollStart);
 
     const step = 368;
     const scrollBy = (dir) => {
@@ -153,10 +149,12 @@
     let startX = 0;
     let startScroll = 0;
     let moved = 0;
+    let suppressClick = false;
     scroller.addEventListener("pointerdown", (event) => {
       if (event.pointerType === "mouse" && event.button !== 0) return;
       dragging = true;
       moved = 0;
+      suppressClick = false;
       startX = event.clientX;
       startScroll = scroller.scrollLeft;
       try {
@@ -172,23 +170,42 @@
       scroller.scrollLeft = startScroll - dx;
     });
     const endDrag = () => {
+      // Only treat as a drag (block navigation) when the pointer actually moved.
+      suppressClick = moved > 8;
       dragging = false;
+      moved = 0;
     };
     scroller.addEventListener("pointerup", endDrag);
     scroller.addEventListener("pointercancel", endDrag);
 
+    const hrefFor = (el) => {
+      let n = el;
+      while (n && n !== scroller) {
+        const name = n.getAttribute && n.getAttribute("data-name");
+        if (name && linkMap[name]) return linkMap[name];
+        n = n.parentElement;
+      }
+      return null;
+    };
+
+    // Pointer on card papers + recipe roots (display:contents groups).
     scroller.querySelectorAll("[data-name]").forEach((el) => {
-      const href = linkMap[el.getAttribute("data-name") || ""];
-      if (!href) return;
-      el.style.cursor = "pointer";
-      el.addEventListener("click", (event) => {
-        if (moved > 8) {
-          event.preventDefault();
-          event.stopPropagation();
-          return;
-        }
-        location.href = href;
-      });
+      if (hrefFor(el)) el.style.cursor = "pointer";
+    });
+    scroller.querySelectorAll("[data-node-id]").forEach((el) => {
+      const w = parseFloat(el.style.width);
+      if (w >= 300 && w <= 360) el.style.cursor = "pointer";
+    });
+
+    scroller.addEventListener("click", (event) => {
+      if (suppressClick) {
+        event.preventDefault();
+        event.stopPropagation();
+        suppressClick = false;
+        return;
+      }
+      const href = hrefFor(event.target);
+      if (href) location.href = href;
     });
   }
 })();
