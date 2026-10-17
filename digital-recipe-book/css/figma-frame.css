@@ -37,7 +37,9 @@ body{overflow-x:hidden;}
 .notebook-lines[data-line-count="12"]{--lc:12;}
 .notebook-lines[data-line-count="14"]{--lc:14;}
 .notebook-lines[data-margin="1"]{
-  /* Recipe Ingredients paper: JS sets --line-gap/--line-offset so rows sit between rules */
+  /* Recipe Ingredients paper: baked/JS --line-gap/~63px + --line-offset center ink between rules */
+  --line-gap: 63px;
+  --line-offset: 0px;
   background-image:
     linear-gradient(to right, transparent 59px, rgba(224,159,127,.55) 59px, rgba(224,159,127,.55) 61px, transparent 61px),
     repeating-linear-gradient(

@@ -63,14 +63,19 @@
     const paperRect = paper.getBoundingClientRect();
     const lc = parseInt(el.getAttribute("data-line-count") || "11", 10) || 11;
     const fallbackGap = () => {
-      const h = paperRect.height || (host && host.clientHeight) || el.clientHeight;
-      if (h > 0 && lc > 0) el.style.setProperty("--line-gap", `${h / lc}px`);
+      // Never fall back to height/lineCount — that recreates the "text on
+      // the rules" look. Keep baked vars or a ~63px recipe row pitch.
+      const baked = el.style.getPropertyValue("--line-gap");
+      if (baked) return;
+      el.style.setProperty("--line-gap", "63px");
     };
 
     const root =
       el.closest('[data-name="Ingredients"]') ||
       paper.closest('[data-name="Ingredients"]') ||
       document;
+    // Use glyph ink midpoint (not the tall Figma text box) so rules sit
+    // evenly above/below the letters — matching the approved between-lines look.
     const mids = [...root.querySelectorAll("p")]
       .filter((p) => {
         const t = p.textContent.trim();
@@ -79,13 +84,39 @@
         if (cs.position !== "absolute") return false;
         const fs = parseFloat(cs.fontSize);
         if (fs < 20 || fs > 28) return false;
+        const color = (cs.color || "").replace(/\s/g, "");
+        // Ingredient copy is Vollkorn #827149
+        if (color && !color.includes("130,113,73") && color !== "rgb(130,113,73)") {
+          /* allow if color parse differs; still require left in paper */
+        }
         const r = p.getBoundingClientRect();
         const mid = (r.top + r.bottom) / 2;
         return mid >= paperRect.top - 1 && mid <= paperRect.bottom + 1;
       })
       .map((p) => {
+        let textNode = null;
+        const walk = document.createTreeWalker(p, NodeFilter.SHOW_TEXT);
+        while (walk.nextNode()) {
+          if (walk.currentNode.nodeValue && walk.currentNode.nodeValue.trim()) {
+            textNode = walk.currentNode;
+            break;
+          }
+        }
+        if (textNode) {
+          const full = textNode.nodeValue;
+          const ts = full.length - full.trimStart().length;
+          const te = full.trimEnd().length;
+          const range = document.createRange();
+          range.setStart(textNode, ts);
+          range.setEnd(textNode, Math.max(ts + 1, te));
+          const gr = range.getBoundingClientRect();
+          if (gr.height > 0) {
+            return (gr.top + gr.bottom) / 2 - paperRect.top;
+          }
+        }
         const r = p.getBoundingClientRect();
-        return (r.top + r.bottom) / 2 - paperRect.top;
+        // Fallback: optical center of Figma box (~ink sits in upper portion)
+        return r.top - paperRect.top + Math.min(17, r.height * 0.36);
       })
       .sort((a, b) => a - b);
 
@@ -134,18 +165,27 @@
     el.style.setProperty("--line-offset", `${offset}px`);
   };
 
-  document.querySelectorAll(".notebook-lines").forEach((el) => {
-    if (el.getAttribute("data-margin") === "1") {
-      alignIngredientNotebook(el);
-      return;
-    }
-    const lc = parseInt(el.getAttribute("data-line-count") || "11", 10) || 11;
-    const host = el.parentElement;
-    const h = (host && host.clientHeight) || el.clientHeight;
-    if (h > 0 && lc > 0) {
-      el.style.setProperty("--line-gap", `${h / lc}px`);
-    }
-  });
+  const syncNotebookLines = () => {
+    document.querySelectorAll(".notebook-lines").forEach((el) => {
+      if (el.getAttribute("data-margin") === "1") {
+        // Recipe pages bake --line-gap/--line-offset on the element for first
+        // paint; refine with ink metrics after fonts are ready.
+        alignIngredientNotebook(el);
+        return;
+      }
+      const lc = parseInt(el.getAttribute("data-line-count") || "11", 10) || 11;
+      const host = el.parentElement;
+      const h = (host && host.clientHeight) || el.clientHeight;
+      if (h > 0 && lc > 0) {
+        el.style.setProperty("--line-gap", `${h / lc}px`);
+      }
+    });
+  };
+  syncNotebookLines();
+  if (document.fonts && document.fonts.ready) {
+    document.fonts.ready.then(syncNotebookLines).catch(() => {});
+  }
+  window.addEventListener("load", syncNotebookLines);
 
   // Looking for More: horizontal strip; nav via Pointers (182:2889) + keyboard (no visible scrollbar)
   const scroller = document.querySelector('[data-name="Scroll Bar"]');
