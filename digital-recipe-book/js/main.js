@@ -55,27 +55,102 @@
   }
 
   // Size ruled paper from each ShaderFill lineCount × host height.
-  // Recipe Ingredients (data-margin=1): match gap/phase to ingredient rows so
-  // bullet+text sit centered between horizontal rules (not on the lines).
+  // Recipe Ingredients (data-margin=1): one absolute rule between each pair of
+  // ingredient ink mids so every row is mid-gap (uneven 62/64 spacing cannot drift).
+  const ingredientInkMid = (p, paperTop) => {
+    let textNode = null;
+    const walk = document.createTreeWalker(p, NodeFilter.SHOW_TEXT);
+    while (walk.nextNode()) {
+      if (walk.currentNode.nodeValue && walk.currentNode.nodeValue.trim()) {
+        textNode = walk.currentNode;
+        break;
+      }
+    }
+    if (textNode) {
+      const full = textNode.nodeValue;
+      const ts = full.length - full.trimStart().length;
+      const te = full.trimEnd().length;
+      const range = document.createRange();
+      range.setStart(textNode, ts);
+      range.setEnd(textNode, Math.max(ts + 1, te));
+      const gr = range.getBoundingClientRect();
+      if (gr.height > 0) return (gr.top + gr.bottom) / 2 - paperTop;
+    }
+    const r = p.getBoundingClientRect();
+    return r.top - paperTop + Math.min(17, r.height * 0.36);
+  };
+
+  const ruleYsFromMids = (mids, paperH) => {
+    // Chain rules so EACH ink mid is exact band center. Split on spacing
+    // outliers (e.g. "Crumble Ingredients" header gap) so the chain cannot jump.
+    if (!mids.length) return [];
+    const spacings = [];
+    for (let i = 1; i < mids.length; i++) spacings.push(mids[i] - mids[i - 1]);
+    const median =
+      spacings.length > 0
+        ? [...spacings].sort((a, b) => a - b)[Math.floor(spacings.length / 2)]
+        : 63;
+    const groups = [];
+    let cur = [mids[0]];
+    for (let i = 1; i < mids.length; i++) {
+      if (mids[i] - mids[i - 1] > median * 1.35) {
+        groups.push(cur);
+        cur = [mids[i]];
+      } else cur.push(mids[i]);
+    }
+    groups.push(cur);
+
+    const ys = [];
+    groups.forEach((g) => {
+      if (g.length === 1) {
+        ys.push(g[0] - median / 2, g[0] + median / 2);
+        return;
+      }
+      const local = [g[0] - (g[1] - g[0]) / 2];
+      g.forEach((mid) => local.push(2 * mid - local[local.length - 1]));
+      ys.push(...local);
+    });
+    ys.sort((a, b) => a - b);
+    // Dedupe near-duplicates
+    const uniq = [];
+    ys.forEach((y) => {
+      if (!uniq.length || Math.abs(y - uniq[uniq.length - 1]) > 0.5) uniq.push(y);
+    });
+    let y = uniq[0] - median;
+    while (y > -1) {
+      uniq.unshift(y);
+      y -= median;
+    }
+    y = uniq[uniq.length - 1] + median;
+    while (y < paperH + 1) {
+      uniq.push(y);
+      y += median;
+    }
+    return uniq;
+  };
+
+  const renderIngredientRules = (el, ys) => {
+    el.querySelectorAll(".notebook-rule").forEach((n) => n.remove());
+    ys.forEach((top) => {
+      if (top < -2 || top > el.clientHeight + 2) return;
+      const rule = document.createElement("div");
+      rule.className = "notebook-rule";
+      rule.setAttribute("aria-hidden", "true");
+      rule.style.top = `${top.toFixed(2)}px`;
+      el.appendChild(rule);
+    });
+  };
+
   const alignIngredientNotebook = (el) => {
     const host = el.parentElement;
     const paper = (host && host.parentElement) || host || el;
     const paperRect = paper.getBoundingClientRect();
-    const lc = parseInt(el.getAttribute("data-line-count") || "11", 10) || 11;
-    const fallbackGap = () => {
-      // Never fall back to height/lineCount — that recreates the "text on
-      // the rules" look. Keep baked vars or a ~63px recipe row pitch.
-      const baked = el.style.getPropertyValue("--line-gap");
-      if (baked) return;
-      el.style.setProperty("--line-gap", "63px");
-    };
+    const paperH = paperRect.height || el.clientHeight || 0;
 
     const root =
       el.closest('[data-name="Ingredients"]') ||
       paper.closest('[data-name="Ingredients"]') ||
       document;
-    // Use glyph ink midpoint (not the tall Figma text box) so rules sit
-    // evenly above/below the letters — matching the approved between-lines look.
     const mids = [...root.querySelectorAll("p")]
       .filter((p) => {
         const t = p.textContent.trim();
@@ -84,92 +159,28 @@
         if (cs.position !== "absolute") return false;
         const fs = parseFloat(cs.fontSize);
         if (fs < 20 || fs > 28) return false;
-        const color = (cs.color || "").replace(/\s/g, "");
-        // Ingredient copy is Vollkorn #827149
-        if (color && !color.includes("130,113,73") && color !== "rgb(130,113,73)") {
-          /* allow if color parse differs; still require left in paper */
-        }
+        const left = parseFloat(cs.left);
+        if (!Number.isNaN(left) && (left < 100 || left > 250)) return false;
         const r = p.getBoundingClientRect();
         const mid = (r.top + r.bottom) / 2;
         return mid >= paperRect.top - 1 && mid <= paperRect.bottom + 1;
       })
-      .map((p) => {
-        let textNode = null;
-        const walk = document.createTreeWalker(p, NodeFilter.SHOW_TEXT);
-        while (walk.nextNode()) {
-          if (walk.currentNode.nodeValue && walk.currentNode.nodeValue.trim()) {
-            textNode = walk.currentNode;
-            break;
-          }
-        }
-        if (textNode) {
-          const full = textNode.nodeValue;
-          const ts = full.length - full.trimStart().length;
-          const te = full.trimEnd().length;
-          const range = document.createRange();
-          range.setStart(textNode, ts);
-          range.setEnd(textNode, Math.max(ts + 1, te));
-          const gr = range.getBoundingClientRect();
-          if (gr.height > 0) {
-            return (gr.top + gr.bottom) / 2 - paperRect.top;
-          }
-        }
-        const r = p.getBoundingClientRect();
-        // Fallback: optical center of Figma box (~ink sits in upper portion)
-        return r.top - paperRect.top + Math.min(17, r.height * 0.36);
-      })
+      .map((p) => ingredientInkMid(p, paperRect.top))
       .sort((a, b) => a - b);
 
-    if (!mids.length) {
-      fallbackGap();
-      return;
-    }
+    if (!mids.length) return;
 
-    let gap;
+    const ys = ruleYsFromMids(mids, paperH);
+    renderIngredientRules(el, ys);
+    // Keep vars for debugging / any residual CSS; not used for drawing.
     if (mids.length >= 2) {
-      const spacings = [];
-      for (let i = 1; i < mids.length; i++) spacings.push(mids[i] - mids[i - 1]);
-      spacings.sort((a, b) => a - b);
-      const median = spacings[Math.floor(spacings.length / 2)];
-      const good = spacings.filter((s) => s > median * 0.7 && s < median * 1.35);
-      const use = good.length ? good : spacings;
-      gap = use.reduce((a, b) => a + b, 0) / use.length;
-    } else {
-      gap = paperRect.height > 0 && lc > 0 ? paperRect.height / lc : 63;
+      el.style.setProperty("--line-gap", `${mids[1] - mids[0]}px`);
     }
-    if (!(gap > 8)) {
-      fallbackGap();
-      return;
-    }
-
-    // Lines fall at offset + n*gap; band centers at offset + (n+0.5)*gap.
-    // Circular mean of (mid % gap) — mods near 0 and near gap are the same phase.
-    const mods = mids.map((m) => ((m % gap) + gap) % gap);
-    const sinSum = mods.reduce(
-      (a, m) => a + Math.sin((2 * Math.PI * m) / gap),
-      0
-    );
-    const cosSum = mods.reduce(
-      (a, m) => a + Math.cos((2 * Math.PI * m) / gap),
-      0
-    );
-    const avgMod =
-      (((Math.atan2(sinSum / mods.length, cosSum / mods.length) /
-        (2 * Math.PI)) *
-        gap) +
-        gap) %
-      gap;
-    const offset = avgMod - gap / 2;
-
-    el.style.setProperty("--line-gap", `${gap}px`);
-    el.style.setProperty("--line-offset", `${offset}px`);
   };
 
   const syncNotebookLines = () => {
     document.querySelectorAll(".notebook-lines").forEach((el) => {
       if (el.getAttribute("data-margin") === "1") {
-        // Recipe pages bake --line-gap/--line-offset on the element for first
-        // paint; refine with ink metrics after fonts are ready.
         alignIngredientNotebook(el);
         return;
       }

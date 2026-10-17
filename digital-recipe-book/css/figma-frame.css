@@ -37,19 +37,24 @@ body{overflow-x:hidden;}
 .notebook-lines[data-line-count="12"]{--lc:12;}
 .notebook-lines[data-line-count="14"]{--lc:14;}
 .notebook-lines[data-margin="1"]{
-  /* Recipe Ingredients paper: baked/JS --line-gap/~63px + --line-offset center ink between rules */
-  --line-gap: 63px;
-  --line-offset: 0px;
+  /* Recipe Ingredients: red margin only here; horizontal rules are .notebook-rule
+     children placed at midpoints between consecutive ingredient ink mids so every
+     row sits in its own gap (no constant-pitch drift). */
   background-image:
-    linear-gradient(to right, transparent 59px, rgba(224,159,127,.55) 59px, rgba(224,159,127,.55) 61px, transparent 61px),
-    repeating-linear-gradient(
-      to bottom,
-      transparent,
-      transparent calc(var(--line-gap) - 1px),
-      rgba(79,74,67,.22) var(--line-gap)
-    );
-  background-size: auto, 100% var(--line-gap);
-  background-position: 0 0, 0 var(--line-offset);
+    linear-gradient(to right, transparent 59px, rgba(224,159,127,.55) 59px, rgba(224,159,127,.55) 61px, transparent 61px);
+  background-size: auto;
+  background-position: 0 0;
+  background-repeat: no-repeat;
+}
+.notebook-lines[data-margin="1"] .notebook-rule{
+  position:absolute;
+  left:0;
+  right:0;
+  height:1px;
+  margin:0;
+  padding:0;
+  background:rgba(79,74,67,.22);
+  pointer-events:none;
 }
 /* Looking for More: scroll programmatically via Pointers (182:2889); hide native scrollbar */
 [data-name="Scroll Bar"]{
