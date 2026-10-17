@@ -66,8 +66,13 @@
 
   // Looking for More: horizontal strip; nav via Pointers (182:2889) + keyboard (no visible scrollbar)
   const scroller = document.querySelector('[data-name="Scroll Bar"]');
-  const prev = document.querySelector("[data-carousel-prev]");
-  const next = document.querySelector("[data-carousel-next]");
+  // Hotspots + Figma triangle nodes (both carry data-carousel-prev/next).
+  const prevButtons = [
+    ...document.querySelectorAll("[data-carousel-prev]"),
+  ];
+  const nextButtons = [
+    ...document.querySelectorAll("[data-carousel-next]"),
+  ];
 
   // Recipe card roots in the Looking for More strip (and unique image aliases).
   const linkMap = {
@@ -230,13 +235,33 @@
       if (!img.complete) img.addEventListener("load", resetScrollStart, { once: true });
     });
 
+    // One card ≈ 336px paper + ~32px gap.
     const step = 368;
     const scrollBy = (dir) => {
       scroller.scrollBy({ left: dir * step, behavior: "smooth" });
     };
-    prev?.addEventListener("click", () => scrollBy(-1));
-    next?.addEventListener("click", () => scrollBy(1));
+    const bindArrow = (el, dir) => {
+      if (!el) return;
+      el.style.cursor = "pointer";
+      el.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        scrollBy(dir);
+      });
+      el.addEventListener("keydown", (event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          scrollBy(dir);
+        }
+      });
+    };
+    prevButtons.forEach((el) => bindArrow(el, -1));
+    nextButtons.forEach((el) => bindArrow(el, 1));
     document.addEventListener("keydown", (event) => {
+      const tag = (event.target && event.target.tagName) || "";
+      if (tag === "INPUT" || tag === "TEXTAREA" || event.target?.isContentEditable) {
+        return;
+      }
       if (event.key === "ArrowLeft") scrollBy(-1);
       if (event.key === "ArrowRight") scrollBy(1);
     });

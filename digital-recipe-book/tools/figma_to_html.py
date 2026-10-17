@@ -614,8 +614,8 @@ def hotspots(slug: str) -> str:
 <a class="hotspot" href="recipes/brownies.html" style="left:75px;top:820px;width:350px;height:280px" title="Brownies card">Brownies</a>
 <a class="hotspot" href="recipes/chocolate-chip-cookies.html" style="left:545px;top:820px;width:350px;height:280px" title="Cookies card">Cookies</a>
 <a class="hotspot" href="recipes/banana-bread.html" style="left:1011px;top:820px;width:350px;height:280px" title="Banana card">Banana</a>
-<button type="button" class="hotspot" data-carousel-prev aria-label="Previous" style="left:36px;top:1560px;width:56px;height:56px;border:0;background:transparent;color:transparent;text-indent:0">‹</button>
-<button type="button" class="hotspot" data-carousel-next aria-label="Next" style="left:1348px;top:1560px;width:56px;height:56px;border:0;background:transparent;color:transparent;text-indent:0">›</button>
+<button type="button" class="hotspot" data-carousel-prev aria-label="Previous" style="left:48px;top:1718px;width:56px;height:56px;border:0;background:transparent;color:transparent;text-indent:0">‹</button>
+<button type="button" class="hotspot" data-carousel-next aria-label="Next" style="left:1332px;top:1718px;width:56px;height:56px;border:0;background:transparent;color:transparent;text-indent:0">›</button>
 """
         )
     if slug == "all-recipes":
